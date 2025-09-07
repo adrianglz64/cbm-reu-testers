@@ -142,8 +142,8 @@ L80d8               sty reu_ram_bank_num
                     lda dma_data_table,x
                     sta zp_dma_data
                     ; c64 source addr $0050
-                    ldx #$50
-                    ldy #$00
+                    ldx #<zp_dma_data
+                    ldy #>zp_dma_data
                     jsr set_c64_addr
                     ; reu dest addr $0000
                     ldx #$00
@@ -231,29 +231,25 @@ start_test2         lda #$02
                     stx zp_data_table_offs
                     sty zp_reu_bank_tmp
                     sty reu_ram_bank_num
+
+                    ; fill 4000-7fff with 55aa
                     lda #$00
                     sta zp_ptr
+                    tay
                     lda #$40
-                    sta zp_ptr + 1
-                    ; fill 4000-7fff with 55aa
-                    ldy #$00
+                    sta zp_ptr+1
+                    tax
 mem_init_55aa       lda #$55
                     sta (zp_ptr),y
-                    inc zp_ptr
+                    iny
                     lda #$aa
                     sta (zp_ptr),y
-                    lda zp_ptr
-                    cmp #$ff
-                    beq mem_init_next_page
-                    inc zp_ptr
-                    jmp mem_init_55aa
+                    iny
+                    bne mem_init_55aa
                     
-mem_init_next_page  inc zp_ptr + 1
-                    lda zp_ptr + 1
-                    cmp #$80
-                    beq mem_init_done
-                    inc zp_ptr
-                    jmp mem_init_55aa
+mem_init_next_page  inc zp_ptr+1
+                    dex
+                    bne mem_init_55aa
                     
                     ; fill all 8 reu banks (256k) with 55aa pattern
 mem_init_done       ldx #$00
@@ -341,42 +337,51 @@ L823d               lda #$01
                     stx zp_data_table_offs
                     sty zp_reu_bank
                     sty reu_ram_bank_num
+                    
+_test_3_4_next_bank
                     ; fill memory areas in table with fill byte ($ff in test 3, $00 in test 4)
-L8252               lda mem_fill_start_tbl,x
+                    ldx zp_fill_byte_index
+                    lda dma_data_table,x
+                    sta zp_temp_int
+
+                    lda #$00
                     sta zp_fill_ptr
+                    tax
+L8252               
+                    ldy mem_fill_start_tbl,x
                     lda mem_fill_end_tbl,x
                     sta zp_fill_end
                     inx
                     lda mem_fill_start_tbl,x
-                    sta zp_fill_ptr + 1
+                    sta zp_fill_ptr+1
                     lda mem_fill_end_tbl,x
-                    sta zp_fill_end + 1
-                    stx zp_data_table_offs
-L8269               ldy #$00
-                    ldx zp_fill_byte_index
-                    lda dma_data_table,x
-                    sta (zp_fill_ptr),y
-                    lda zp_fill_ptr + 1
-                    cmp zp_fill_end + 1
-                    bne L827e
-                    lda zp_fill_ptr
-                    cmp zp_fill_end
-                    beq L8290
-L827e               ldx zp_fill_ptr
-                    ldy zp_fill_ptr + 1
-                    jsr increment_int_yx
-                    lda zp_temp_int
-                    sta zp_fill_ptr
-                    lda zp_temp_int + 1
-                    sta zp_fill_ptr + 1
-                    jmp L8269
-                    
-L8290               ldx zp_data_table_offs
+                    sta zp_fill_end+1
                     inx
-                    stx zp_data_table_offs
-                    ; repeat until 5 memory areas are filled (10 bytes of pointers)
+                    
+_fill_next_page     lda zp_fill_ptr+1
+                    cmp zp_fill_end+1
+                    beq fill_last_part
+                    
+                    lda zp_temp_int
+_fill_first         sta (zp_fill_ptr),y
+                    iny
+                    bne _fill_first
+                    inc zp_fill_ptr+1
+                    bne _fill_next_page
+
+fill_last_part
+                    lda zp_temp_int
+_fill_last          sta (zp_fill_ptr),y
+                    cpy zp_fill_end
+                    beq _fill_area_done
+                    iny
+                    bne _fill_last
+                    
+                    
+_fill_area_done     ; repeat until 5 memory areas are filled (10 bytes of pointers)
                     cpx #$0a
                     bne L8252
+                    
                     ; transfer $2000 bytes from current REU bank to $1000 and $6000
                     ldx #$00
                     stx zp_data_table_offs
@@ -399,143 +404,91 @@ L82bb               lda reu_status_reg
                     inc zp_data_table_offs
                     ldx zp_data_table_offs
                     cpx #$02
-                    beq L82d4
+                    beq compare_prefilled
                     ldx #$00
                     ldy #$60
                     jsr set_c64_addr
                     jmp L82a4
                     
                     ; check previously filled areas to verify no bytes have been corrupted outside of the dma transfer ranges
-L82d4               ldx #$00
-                    ldy #$00
-                    stx zp_data_table_offs
-L82da               lda mem_check_start_tbl,x
+compare_prefilled
+                    lda #$00
                     sta zp_fill_ptr
+                    tax
+
+_compare_next_area
+                    ldy mem_check_start_tbl,x
                     lda mem_check_end_tbl,x
                     sta zp_fill_end
                     inx
                     lda mem_check_start_tbl,x
-                    sta zp_fill_ptr + 1
+                    sta zp_fill_ptr+1
                     lda mem_check_end_tbl,x
-                    sta zp_fill_end + 1
-                    stx zp_data_table_offs
-L82f1               ldy #$00
-                    ldx zp_fill_byte_index
-                    lda (zp_fill_ptr),y
-                    cmp dma_data_table,x
-                    beq L8304
-                    inc zp_test3_4_failed
-                    jsr display_test_fail
-                    jmp L83d8
-                    
-L8304               lda zp_fill_ptr + 1
-                    cmp zp_fill_end + 1
-                    bne L8310
-                    lda zp_fill_ptr
-                    cmp zp_fill_end
-                    beq L8322
-L8310               ldx zp_fill_ptr
-                    ldy zp_fill_ptr + 1
-                    jsr increment_int_yx
-                    lda zp_temp_int
-                    sta zp_fill_ptr
-                    lda zp_temp_int + 1
-                    sta zp_fill_ptr + 1
-                    jmp L82f1
-                    
-L8322               ldx zp_data_table_offs
+                    sta zp_fill_end+1
                     inx
-                    stx zp_data_table_offs
+                    
+_compare_next_page  lda zp_fill_ptr+1
+                    cmp zp_fill_end+1
+                    beq compare_last_part
+                    
+                    lda zp_temp_int
+_compare_first      cmp (zp_fill_ptr),y
+                    bne _test_3_4_failed
+                    iny
+                    bne _compare_first
+                    inc zp_fill_ptr+1
+                    bne _compare_next_page
+
+compare_last_part
+                    lda zp_temp_int
+_compare_last       cmp (zp_fill_ptr),y
+                    bne _test_3_4_failed
+                    cpy zp_fill_end
+                    beq _compare_area_done
+                    iny
+                    bne _compare_last
+
+_compare_area_done        
                     ; repeat for all 6 areas (12 bytes of pointers)
                     cpx #$0c
-                    bne L82da
+                    bne _compare_next_area
+                    beq compare_dma_data
+
+_test_3_4_failed
+                    sty zp_fill_ptr
+                    inc zp_test3_4_failed
+                    jmp display_test_fail
+
+compare_dma_data
                     ; check dma transfer data.  $1000-$2fff and $6000-7fff should be filled with $55 $aa.  Check $1000-$2fff first
                     lda #$00
                     sta zp_fill_ptr
                     lda #$10
                     sta zp_fill_ptr + 1
-L8333               ldy #$00
-                    lda (zp_fill_ptr),y
-                    cmp #$55
-                    beq L8343
-                    inc zp_test3_4_failed
-                    jsr display_test_fail
-                    jmp L83d8
-                    
-L8343               ldx zp_fill_ptr
-                    ldy zp_fill_ptr + 1
-                    jsr increment_int_yx
-                    lda zp_temp_int
-                    sta zp_fill_ptr
-                    lda zp_temp_int + 1
-                    sta zp_fill_ptr + 1
                     ldy #$00
+_compare_dma_next   ldx #$20
+_compare_dma        lda (zp_fill_ptr),y
+                    cmp #$55
+                    bne _test_3_4_failed
+                    iny
                     lda (zp_fill_ptr),y
                     cmp #$aa
-                    beq L8362
-                    inc zp_test3_4_failed
-                    jsr display_test_fail
-                    jmp L83d8
+                    bne _test_3_4_failed
+                    iny
+                    bne _compare_dma
+                    inc zp_fill_ptr+1
+                    dex
+                    bne _compare_dma
                     
-L8362               lda zp_fill_ptr + 1
-                    cmp #$2f
-                    bne L836e
-                    lda zp_fill_ptr
-                    cmp #$ff
-                    beq L8380
-L836e               ldx zp_fill_ptr
-                    ldy zp_fill_ptr + 1
-                    jsr increment_int_yx
-                    lda zp_temp_int
-                    sta zp_fill_ptr
-                    lda zp_temp_int + 1
-                    sta zp_fill_ptr + 1
-                    jmp L8333
-                    
-                    ; check $6000-7fff
-L8380               lda #$00
-                    sta zp_fill_ptr
+                    lda zp_fill_ptr+1
+                    cmp #$80
+                    beq compare_done
                     lda #$60
-                    sta zp_fill_ptr + 1
-L8388               ldy #$00
-                    lda (zp_fill_ptr),y
-                    cmp #$55
-                    beq L8398
-                    inc zp_test3_4_failed
-                    jsr display_test_fail
-                    jmp L83d8
+                    sta zp_fill_ptr+1
+                    bne _compare_dma_next
                     
-L8398               ldx zp_fill_ptr
-                    ldy zp_fill_ptr + 1
-                    jsr increment_int_yx
-                    lda zp_temp_int
-                    sta zp_fill_ptr
-                    lda zp_temp_int + 1
-                    sta zp_fill_ptr + 1
-                    ldy #$00
-                    lda (zp_fill_ptr),y
-                    cmp #$aa
-                    beq L83b7
-                    inc zp_test3_4_failed
-                    jsr display_test_fail
-                    jmp L83d8
-                    
-L83b7               lda zp_fill_ptr + 1
-                    cmp #$7f
-                    bne L83c3
-                    lda zp_fill_ptr
-                    cmp #$ff
-                    beq L83d5
-L83c3               ldx zp_fill_ptr
-                    ldy zp_fill_ptr + 1
-                    jsr increment_int_yx
-                    lda zp_temp_int
-                    sta zp_fill_ptr
-                    lda zp_temp_int + 1
-                    sta zp_fill_ptr + 1
-                    jmp L8388
-                    
-L83d5               jsr display_test_pass
+compare_done
+                    jsr display_test_pass
                     ; advance to next reu bank
 L83d8               lda reu_ram_bank_num
                     and #$07
@@ -557,7 +510,7 @@ L83d8               lda reu_ram_bank_num
                     ; loop until all 4 banks tested (256K)
                     cmp zp_xfer_count
                     beq L83ff
-                    jmp L8252
+                    jmp _test_3_4_next_bank
                     
 L83ff               lda zp_fill_byte_index
                     cmp #$00
@@ -1179,7 +1132,15 @@ L88cb               lda txt_pass_ram_exp,x
                     inx
                     cpx #$28
                     bne L88cb
-                    jmp wait_key
+                    
+                    lda #$00
+                    tax
+                    tay
+delay1              inx
+                    bne delay1
+                    iny
+                    bne delay1
+                    jmp start
                     
 wait_key            nop
                     jmp wait_key_restart
@@ -1198,8 +1159,7 @@ display_test_fail   jsr print_fail_txt
                     jsr print_data_out
                     jsr get_print_data_in
                     jsr print_reu_addr
-                    jsr wait_key
-                    rts
+                    jmp wait_key
                     
 print_reu_addr      lda zp_test_num
                     cmp #$03
@@ -1554,6 +1514,14 @@ increment_int_yx    clc
                     adc #$00
                     sta zp_temp_int + 1
                     rts
+
+wait_key_restart    lda $dc01
+                    bpl L8f0c
+                    cmp #$ff
+                    beq wait_key_restart
+                    jmp start
+                    
+L8f0c               jmp ($fffc)
                     
 dma_data_table      dc.b $00,$55,$aa,$ff
 txt_digit_chars     dc.b $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$01
@@ -1567,64 +1535,16 @@ double_data_addr    dc.w $04b2,$04da,$0502,$052a,$0552,$057a,$05a2,$05ca,$066a,$
 reu_addr_scrn_addr  dc.w $04c1,$04e9,$0511,$0539,$0561,$0589,$05b1,$05d9,$0679,$06a1,$06c9,$06f1,$0719,$0741
 screen_line_table   dc.w $0400,$0400,$0428,$0450,$0478,$04a0,$04c8,$04f0,$0518,$0540,$0568,$0590,$05b8
                     dc.w $05e0,$0608,$0630,$0658,$0680,$06a8,$06d0,$06f8,$0720,$0748,$0770,$0798,$07c0
+
 mem_fill_start_tbl  dc.w $0002,$0080,$0200,$0800,$c000,$e000
 mem_fill_end_tbl    dc.w $004f,$0136,$03ff,$7fff,$cfff,$feff
 mem_check_start_tbl dc.w $0002,$0080,$0200,$0800,$3000,$c000,$e000
 mem_check_end_tbl   dc.w $004f,$0136,$03ff,$0fff,$5fff,$cfff,$feff
+
 txt_exp_ram_test    dc.b $20,$20,$20,$20,$20,$20,$20,$20,$32,$35,$36,$0b,$20,$05,$18,$10,$01,$0e,$13,$09,$0f,$0e,$20,$12,$01,$0d,$20,$14,$05,$13,$14,$20,$20,$20,$20,$20,$20,$20,$20,$20
 txt_top_header      dc.b $20,$14,$05,$13,$14,$20,$20,$10,$01,$13,$13,$2f,$06,$01,$09,$0c,$20,$20,$04,$0f,$15,$14,$20,$20,$04,$09,$0e,$20,$20,$02,$0e,$0b,$2f,$01,$04,$04,$12,$20,$20,$20
 txt_pass_test       dc.b $20,$20,$31,$20,$20,$20,$20,$20,$20,$10,$01,$13,$13,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
-                    dc.b $20,$20,$20,$20,$20,$20,$20,$20
 txt_fail            dc.b $20,$20,$31,$20,$20,$20,$20,$20,$20,$06,$01,$09,$0c,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
-                    dc.b $20,$20,$20,$20,$20,$20,$20,$20
 txt_bottom_header   dc.b $20,$14,$05,$13,$14,$20,$20,$10,$01,$13,$13,$2f,$06,$01,$09,$0c,$20,$20,$12,$01,$04,$04,$20,$20,$03,$01,$04,$04,$20,$20,$02,$14,$0c,$08,$20,$02,$0b,$20,$20,$20
 txt_pass_ram_exp    dc.b $20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$10,$01,$13,$13,$20,$12,$01,$0d,$20,$05,$18,$10,$01,$0e,$13,$09,$0f,$0e,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
-
-unused_garbage      dc.b $0e,$20,$12,$01,$0d
-                    dc.b $20,$14,$05,$13,$14,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$14
-                    dc.b $05,$13,$14,$20,$20,$10,$01,$13,$13,$2f,$06,$01,$09,$0c,$20,$20
-                    dc.b $04,$0f,$15,$14,$20,$20,$04,$09,$0e,$20,$20,$02,$0e,$0b,$2f,$01
-                    dc.b $04,$04,$12,$20,$20,$20,$20,$20,$31,$20,$20,$20,$20,$20,$20,$10
-                    dc.b $01,$13,$13,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
-                    dc.b $20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
-                    dc.b $20,$20,$20,$20,$20,$20,$20,$20,$31,$20,$20,$20,$20,$20,$20,$06
-                    dc.b $01,$09,$0c,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
-                    dc.b $20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20,$20
-                    dc.b $20,$20,$20,$20,$20,$20,$20,$14,$05,$13,$14,$20,$20,$10,$01,$13
-                    dc.b $13,$2f,$06,$01,$09,$0c,$20,$20,$12,$01,$04,$04,$20,$20,$03,$01
-                    dc.b $04,$04,$20,$20,$02,$14,$0c,$08,$20,$02,$0b,$20,$20,$20,$20,$20
-                    dc.b $20,$14,$31,$20,$14,$32,$20,$14,$33,$2f,$34,$20,$14,$35,$2f,$36
-                    dc.b $20,$14,$37,$20,$14,$38,$20,$14,$39,$20,$14,$01,$20,$20,$20,$10
-                    dc.b $01,$13,$13,$20,$20,$20,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-wait_key_restart    lda $dc01
-                    bpl L8f0c
-                    cmp #$ff
-                    beq wait_key_restart
-                    jmp start
-                    
-L8f0c               jmp ($fffc)
-                    
-unused_blank        dc.b $00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-                    dc.b $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 
