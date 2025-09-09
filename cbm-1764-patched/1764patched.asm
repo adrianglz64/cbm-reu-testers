@@ -1133,14 +1133,39 @@ L88cb               lda txt_pass_ram_exp,x
                     cpx #$28
                     bne L88cb
                     
-                    lda #$00
-                    tax
-                    tay
-delay1              inx
-                    bne delay1
-                    iny
-                    bne delay1
-                    jmp start
+                    ; set up a 4 second restart delay
+                    ; test ntsc/pal flag - FIXME: the flag is probably cleared by the tests
+                    bit $02a6
+                    bne pal_delay
+ntsc_delay          ldx #240
+                    bne wait_before_restart
+pal_delay           ldx #200
+
+wait_before_restart
+                    lda $dc01
+                    bpl do_reset        ; stop pressed?
+                    cmp #$ff
+                    bne do_restart      ; another key in the same row as stop pressed?
+
+                    lda $d011
+                    bpl wait_before_restart
+                    
+                    ; raster >= 256, decrement our delay counter and restart if we reach zero
+                    dex
+                    beq do_restart
+
+                    ; we won't bother checking for keypresses while the raster high bit is set
+wait_raster         lda $d011
+                    bmi wait_raster
+                    ; new frame started.  Go back to checking keys
+                    bpl wait_before_restart
+
+                    ; jump to kernal reset routine
+do_reset            jmp ($fffc)
+
+                    ; restart test
+do_restart          jmp start
+
                     
 wait_key            nop
                     jmp wait_key_restart
@@ -1213,6 +1238,7 @@ L8943               lda zp_reu_bank_tmp
                     sta (zp_ptr),y
                     rts
                     
+; Fill screen memory line by line with $20
 init_screen_mem     ldx #$00
 _set_line_addr      lda screen_line_table,x
                     sta zp_ptr
@@ -1226,10 +1252,13 @@ _clear_line         lda #$20
                     cpy #$28
                     bne _clear_line
                     inx
-                    cpx #$32
+                    ; the first line is repeated twice in line table
+                    ; so the original code didn't clear the last line
+                    cpx #$34            
                     bne _set_line_addr
                     rts
                     
+; Fill color memory with $03 (cyan)
 init_color_mem      lda #$03
                     ldx #$00
 _do_color           sta $d800,x
