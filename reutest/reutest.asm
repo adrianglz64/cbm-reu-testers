@@ -36,7 +36,12 @@ zp_reu_fail_hi      = $72
 zp_xfer_count       = $73
 zp_temp_int         = $76
 zp_fill_byte_index  = $78
-                    
+zp_dma_increment    = $79
+zp_dma_max_inc      = $7b
+zp_reu_addr         = $7c
+zp_c64_addr         = $7e
+
+
                     org $8000
 
 start               sei
@@ -124,8 +129,24 @@ init_sprite_data    sta $0800,x
                     sta d010_vSpriteXMSB
                     lda #$ff
                     sta d015_vSprEnable
-                    jmp L80c8
                     
+                    ; TODO: set this from some menu
+                    lda #$01
+                    sta zp_dma_increment
+                    lda #$00
+                    sta zp_dma_increment+1
+
+                    ; if zp_dma_increment is set to $0000, then each test uses the max dma transfer length
+                    ; otherwise use the value in zp_dma_increment
+                    lda zp_dma_increment
+                    ora zp_dma_increment+1
+                    beq _set_dma_max
+                    lda #$00
+                    beq set_dma_increment
+_set_dma_max        lda #$01
+set_dma_increment   sta zp_dma_max_inc
+
+
                     ; Test 1: fill each 64k reu bank with $00, $55, $aa, $ff, using dma compare to verify each operation
                     ; ==================================================================================================
 L80c8               lda #$01
@@ -134,10 +155,10 @@ L80c8               lda #$01
                     sta zp_screen_line_num
                     ldx #$00
                     stx zp_test1_failed
+                    stx zp_data_table_offs
                     ldy #$00
                     sty zp_reu_bank
 L80d8               sty reu_ram_bank_num
-                    stx zp_data_table_offs
                     sty zp_reu_bank_tmp
                     lda dma_data_table,x
                     sta zp_dma_data
@@ -206,12 +227,12 @@ L8140               ldy zp_reu_bank_tmp
                     jmp L80d8
                     
                     ; set up for next test byte
-test1_bank_done     ldx zp_data_table_offs
-                    inx
-                    ldy #$00
-                    sty zp_reu_bank
+test1_bank_done     inc zp_data_table_offs
+                    ldx zp_data_table_offs
                     cpx #$04
                     beq start_test2
+                    ldy #$00
+                    sty zp_reu_bank
                     lda #$05
                     sta zp_screen_line_num
                     jmp L80d8
