@@ -410,8 +410,7 @@ L82bb               lda reu_status_reg
                     jsr set_c64_addr
                     jmp L82a4
                     
-                    ; check previously filled areas to verify no bytes have been corrupted outside of the dma transfer ranges
-compare_prefilled
+compare_prefilled   ; check previously filled areas to verify no bytes have been corrupted outside of the dma transfer ranges
                     lda #$00
                     sta zp_fill_ptr
                     tax
@@ -448,8 +447,7 @@ _compare_last       cmp (zp_fill_ptr),y
                     iny
                     bne _compare_last
 
-_compare_area_done        
-                    ; repeat for all 6 areas (12 bytes of pointers)
+_compare_area_done  ; repeat for all 6 areas (12 bytes of pointers)
                     cpx #$0c
                     bne _compare_next_area
                     beq compare_dma_data
@@ -459,8 +457,7 @@ _test_3_4_failed
                     inc zp_test3_4_failed
                     jmp display_test_fail
 
-compare_dma_data
-                    ; check dma transfer data.  $1000-$2fff and $6000-7fff should be filled with $55 $aa.  Check $1000-$2fff first
+compare_dma_data    ; check dma transfer data.  $1000-$2fff and $6000-7fff should be filled with $55 $aa.  Check $1000-$2fff first
                     lda #$00
                     sta zp_fill_ptr
                     lda #$10
@@ -1133,14 +1130,8 @@ L88cb               lda txt_pass_ram_exp,x
                     cpx #$28
                     bne L88cb
                     
-                    ; set up a 4 second restart delay
-                    ; test ntsc/pal flag - FIXME: the flag is probably cleared by the tests
-                    bit $02a6
-                    bne pal_delay
-ntsc_delay          ldx #240
-                    bne wait_before_restart
-pal_delay           ldx #200
-
+                    ; set up for a 240 frame restart delay (4 seconds in NTSC, 4.8 in PAL)
+                    ldx #240
 wait_before_restart
                     lda $dc01
                     bpl do_reset        ; stop pressed?
