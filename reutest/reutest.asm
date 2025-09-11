@@ -34,13 +34,13 @@ reu_addr_tmp_hi     = $70
 zp_reu_fail_lo      = $71
 zp_reu_fail_hi      = $72
 zp_xfer_count       = $73
+zp_c64_addr         = $74
 zp_temp_int         = $76
 zp_fill_byte_index  = $78
 zp_dma_increment    = $79
 zp_dma_max_inc      = $7b
 zp_reu_addr         = $7c
-zp_c64_addr         = $7e
-
+zp_reu_max_bank     = $7f
 
                     org $8000
 
@@ -135,6 +135,8 @@ init_sprite_data    sta $0800,x
                     sta zp_dma_increment
                     lda #$00
                     sta zp_dma_increment+1
+                    lda #$04
+                    sta zp_reu_max_bank
 
                     ; if zp_dma_increment is set to $0000, then each test uses the max dma transfer length
                     ; otherwise use the value in zp_dma_increment
@@ -147,33 +149,60 @@ _set_dma_max        lda #$01
 set_dma_increment   sta zp_dma_max_inc
 
 
+; Increment c64 address
+;------------------------------------------------------------
+inc_c64_address     subroutine
+
+; Increment REU address
+;------------------------------------------------------------
+inc_reu_address
+
+load_reureg_c64_addr
+load_reureg_reu_addr
+load_reureg_xfer_len
+
+
+set_c64_addr
+                    stx zp_c64_addr
+                    sty zp_c64_addr+1
+                    rts
+
+set_reu_addr
+                    stx zp_reu_addr
+                    sty zp_reu_addr+1
+                    sta zp_reu_addr+2
+                    rts
+                    
+
                     ; Test 1: fill each 64k reu bank with $00, $55, $aa, $ff, using dma compare to verify each operation
                     ; ==================================================================================================
 L80c8               lda #$01
                     sta zp_test_num
                     lda #$05
                     sta zp_screen_line_num
-                    ldx #$00
-                    stx zp_test1_failed
-                    stx zp_data_table_offs
-                    ldy #$00
-                    sty zp_reu_bank
-L80d8               sty reu_ram_bank_num
-                    sty zp_reu_bank_tmp
-                    lda dma_data_table,x
-                    sta zp_dma_data
                     ; c64 source addr $0050
                     ldx #<zp_dma_data
                     ldy #>zp_dma_data
                     jsr set_c64_addr
-                    ; reu dest addr $0000
-                    ldx #$00
-                    ldy #$00
+                    ; reu dest addr 00:0000
+                    lda #$00
+                    tax
+                    tay
                     jsr set_reu_addr
-                    ; 64k transfer length
-                    ldx #$00
-                    ldy #$00
-                    jsr set_reu_xfer_len
+                    ; init misc values
+                    lda #$00
+                    sta zp_test1_failed
+                    sta zp_data_table_offs
+;                    sty zp_reu_bank
+;L80d8               sty reu_ram_bank_num
+;                    sty zp_reu_bank_tmp
+                    ldx zp_data_table_offs
+                    lda dma_data_table,x
+                    sta zp_dma_data
+                    jsr load_reureg_c64_addr
+                    jsr load_reureg_reu_addr
+                    jsr load_reureg_xfer_len
+                    
                     ldx #$00
                     ; fixed c64 address
                     ldy #$80
