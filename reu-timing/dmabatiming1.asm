@@ -42,10 +42,11 @@ dmalen   = $01
 start
          sei
          jsr detectnp
-         jsr initscreen
-         jsr spriteinit
+
+
+         ;jsr initscreen
+         ;jsr spriteinit
          sei
-         rts
          
          tsx
          stx storex
@@ -62,7 +63,7 @@ start
          lda #$7f
          sta $dc0d
          lda $dc0d
-         
+
          ; set up key scan
          lda #$ff
          sta prevkey
@@ -71,6 +72,8 @@ start
 
          lda #$35
          sta $01
+
+         jsr setup_raster_timer
 
          lda #<raster1
          sta $fffe
@@ -403,6 +406,7 @@ rastreset
 
 ;---------------------------------------
 reuzpinit
+         subroutine
          lda #<destaddr
          sta $52
          lda #>destaddr
@@ -653,6 +657,110 @@ detectnp
          lda #$00
          sta npflag
 .npdone   rts
+
+
+; Set up timer A on CIA B to count the number of cycles remaining on the
+; current scanline.  Wish the VICII could just tell us.
+;------------------------------------------------------------------------
+setup_raster_timer
+                subroutine
+                lda #$9b
+                sta $d011
+.again          sei
+                lda #$00
+.rwait1         cmp $d012
+                bne .rwait1
+                bit $d011
+                bpl .rwait1
+.rwait2         cmp $d012
+                beq .rwait2
+                lda #$02
+                sta $d012
+                lda #$01
+                sta $d01a
+                lda #<.tmpirq
+                sta $fffe
+                lda #>.tmpirq
+                sta $ffff
+                cli
+                inc $d020
+                dec $d020
+                lsr $02
+                lsr $02
+                lsr $02
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                nop
+                jmp .again
+
+.tmpirq         ; jitter reduced to one cycle of jitter at this point
+                inc $d020
+                dec $d020
+                lda #$01
+                sta $d019
+                bit npflag
+                bvs .ntsc1
+.ntsc1          bvs .ntsc2
+.ntsc2
+                lsr $02
+                lsr $02
+                lsr $02
+                lsr $02
+                lsr $02
+
+                lda $d012
+                cmp #$02
+                beq .delay1
+.delay1         ; fully stable here.  Now we can set up the timer
+                sta $0400
+                
+                bit npflag
+                bvc .palval
+                lda #64                 ; count down from 64 on ntsc
+                bvs .ntscval
+.palval         lda #62                 ; count down from 62 on pal
+.ntscval        sta $dd04
+                lda #$00
+                sta $dd05
+                lda $ff00
+                lda $ff00
+                bit $02
+                lsr $02
+                lda #$01
+                sta $d020
+                lda #$0e
+                sta $d020
+                nop
+                lda #$11                ; lda #$13 to generate a pulse on PB6
+                sta $dd0e               ; start timer A right at the end of the scanline
+                lsr $02
+                lsr $02                 ; 10
+                lsr $02
+                lsr $02                 ; 20
+                lsr $02
+                lsr $02                 ; 30
+                lsr $02
+                lsr $02                 ; 40
+                lsr $02
+                lsr $02                 ; 50
+                lsr $02
+                lsr $02                 ; 60
+                ;nop
+                bit $02
+                lda $dd04
+                sta $0401
+
+                rti
 
 
 ;---------------------------------------
