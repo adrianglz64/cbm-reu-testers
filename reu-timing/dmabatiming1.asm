@@ -6,8 +6,10 @@
 
 startlinev = $60
 spritexv = 96
-spriteyv = 106
+spriteyv = 37
+;spriteyv = 106
 
+dmadelay = $52
 spritex  = $59
 spritey  = $5b
 startline = $60
@@ -16,8 +18,13 @@ prevkey  = $62
 shift    = $63
 doupdate = $64
 repdelay = $65
+storea   = $66
+minbranch       = $67
+maxbranch       = $68
+
 delay1v  = $18
 delay2v  = $02
+cycledelayv     = $3a
 
 tptr     = $fb
 rastcnt  = $fd
@@ -31,7 +38,7 @@ reubank  = $00
 
 dmacount = $0c
 dmaop    = $91
-dmalen   = $01
+dmalen   = $08
 
          org $0801
 
@@ -42,10 +49,8 @@ dmalen   = $01
 start
          sei
          jsr detectnp
-
-
-         ;jsr initscreen
-         ;jsr spriteinit
+         jsr initscreen
+         jsr spriteinit
          sei
          
          tsx
@@ -81,16 +86,28 @@ start
          sta $ffff
 
 
-         lda #$1b
-         sta $d011
+;          lda #$1b
+;          sta $d011
 
-rwait    bit $d011
-         bpl rwait
+; rwait    bit $d011
+;          bpl rwait
 
-         jsr datatoreu
-         lda #startlinev
-         sta startline
-         jsr rastreset
+          jsr datatoreu
+          lda #$20
+          sta $df02
+          lda #$d0
+          sta $df03
+;          lda #startlinev
+;          sta startline
+;          jsr rastreset
+
+                ldx #$ff
+                stx minbranch
+                inx
+                stx maxbranch
+
+                lda #$30
+                sta $d012
 
          lda #$01
          sta $d01a
@@ -100,7 +117,7 @@ rwait    bit $d011
 endless
          inc $0334
          dec $0334
-         inc $0334
+         ;inc $0334
          jmp endless
 
          cli
@@ -108,6 +125,54 @@ endless
 
 
 raster1
+                sta storea
+                ;lda #$3a
+                lda dmadelay
+                sbc $dd04
+                sta adjdelay+1
+
+adjdelay        bpl .dodelay
+
+.dodelay        cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c5
+                nop
+
+                ldx #$b1
+                stx $df01
+                ;stx $d020
+                ldx #$0e
+                stx $d020
+
+                cmp minbranch
+                bcs .skipmin
+                sta minbranch
+                sta $0426
+.skipmin        cmp maxbranch
+                bcc .skipmax
+                sta maxbranch
+                sta $0427
+.skipmax
+                lda #$01
+                sta $d019
+                lda storea
+
+                jsr keyscan
+                jsr updatescreen
+
+                rti
+
+
          pha
          txa
          pha
@@ -253,6 +318,7 @@ diffkey  ldx #delay1v
          stx repdelay
 
 keychks  tax
+
          ; cursor down
          and #%10000000
          bne chkcrsrt
@@ -285,28 +351,36 @@ checkf1
          txa
          and #%00010000
          bne checkf3
+         bit shift
+         bpl decdelay
          lda $52
-         jsr incdec
-         and #$0f
-         sta $52
+         cmp #$ff
+         beq keydone
+         inc $52
+         bne delaydone
+decdelay lda $52
+         cmp #$00
+         beq keydone
+         dec $52
+delaydone
          inc doupdate
 
 checkf3
-         txa
-         and #%00100000
-         bne checkf5
-         bit shift
-         bmi declen
-         lda $57
-         cmp #$ff
-         beq keydone
-         inc $57
-         bne lendone
-declen   lda $57
-         cmp #$01
-         beq keydone
-         dec $57
-lendone  inc doupdate
+;          txa
+;          and #%00100000
+;          bne checkf5
+;          bit shift
+;          bmi declen
+;          lda $57
+;          cmp #$ff
+;          beq keydone
+;          inc $57
+;          bne lendone
+; declen   lda $57
+;          cmp #$01
+;          beq keydone
+;          dec $57
+; lendone  inc doupdate
 
 checkf5
          txa
@@ -318,9 +392,9 @@ checkf5
          inc doupdate
 
 keydone
-         lda doupdate
-         beq scandone
-         jsr setpritexy
+        ;  lda doupdate
+        ;  beq scandone
+        ;  jsr setpritexy
 scandone
          rts
 
@@ -342,32 +416,32 @@ updatescreen
          sta tptr
          lda #$04
          sta tptr+1
-         ldy #$14
+         ldy #$11
          lda $52
          jsr printhex
-         lda $57
-         ldy #$3a
-         jsr printhex
-         lda startline
-         ldy #$62
-         jsr printhex
-         lda #$18
-         sta tptr
-         lda #$05
-         sta tptr+1
-         ldx #$00
-nextbyte ldy #$05
-         lda $d000,x
-         jsr printhex
-         lda tptr
-         clc
-         adc #$28
-         sta tptr
-         bcc skiphi
-         inc tptr+1
-skiphi   inx
-         cpx #$10
-         bne nextbyte
+        ;  lda $57
+        ;  ldy #$3a
+        ;  jsr printhex
+        ;  lda startline
+        ;  ldy #$62
+        ;  jsr printhex
+;          lda #$18
+;          sta tptr
+;          lda #$05
+;          sta tptr+1
+;          ldx #$00
+; nextbyte ldy #$05
+;          lda $d000,x
+;          jsr printhex
+;          lda tptr
+;          clc
+;          adc #$28
+;          sta tptr
+;          bcc skiphi
+;          inc tptr+1
+; skiphi   inx
+;          cpx #$10
+;          bne nextbyte
          rts
 
          
@@ -407,20 +481,22 @@ rastreset
 ;---------------------------------------
 reuzpinit
          subroutine
-         lda #<destaddr
-         sta $52
-         lda #>destaddr
-         sta $53
-         lda #<reuaddr
-         sta $54
-         lda #>reuaddr
-         sta $55
-         lda #reubank
-         sta $56
-         lda #<dmalen
-         sta $57
-         lda #>dmalen
-         sta $58
+         lda #cycledelayv
+         sta dmadelay
+        ;  lda #<destaddr
+        ;  sta $52
+        ;  lda #>destaddr
+        ;  sta $53
+        ;  lda #<reuaddr
+        ;  sta $54
+        ;  lda #>reuaddr
+        ;  sta $55
+        ;  lda #reubank
+        ;  sta $56
+        ;  lda #<dmalen
+        ;  sta $57
+        ;  lda #>dmalen
+        ;  sta $58
          rts
 
 
@@ -440,6 +516,8 @@ clrcolor sta $d800,y
 ;---------------------------------------
 initscreen
          subroutine
+         lda #$00
+         sta $d021
          lda #$93
          jsr $ffd2
          lda #<msgtxt
@@ -456,27 +534,27 @@ initscreen
          ldy #$00
          jsr textout
 
-         ldy #$0f
-         lda #$30
-         sta tptr
-.printaddr
-         lda #$44
-         jsr $ffd2
-         lda #$30
-         jsr $ffd2
-         jsr $ffd2
-         lda tptr
-         jsr $ffd2
-         lda #$0d
-         jsr $ffd2
-         inc tptr
-         lda tptr
-         cmp #$3a
-         bne .skiphex
-         lda #$41
-         sta tptr 
-.skiphex  dey
-         bpl .printaddr
+;          ldy #$0f
+;          lda #$30
+;          sta tptr
+; .printaddr
+;          lda #$44
+;          jsr $ffd2
+;          lda #$30
+;          jsr $ffd2
+;          jsr $ffd2
+;          lda tptr
+;          jsr $ffd2
+;          lda #$0d
+;          jsr $ffd2
+;          inc tptr
+;          lda tptr
+;          cmp #$3a
+;          bne .skiphex
+;          lda #$41
+;          sta tptr 
+; .skiphex  dey
+;          bpl .printaddr
 
          jsr initcolor
          rts
@@ -491,14 +569,15 @@ done     rts
 
 msgtxt
          .byte $0d,$11
-         .byte "(F1/F2) DMA TO : $D0"
+         .byte "(F1/F2) DELAY : $"
          .byte $0d
-         .byte "(F3/F4) DMA LEN: $"
-         .byte $0d
-         .byte "(F5/F6) RASTER : $"
-         .byte $0d
-         .byte "(CRSR)  SPRITE X/Y"
-         .byte $0d,$11,$00
+         ;.byte "(F3/F4) DMA LEN: $"
+         ;.byte $0d
+         ;.byte "(F5/F6) RASTER : $"
+         ;.byte $0d
+         ;.byte "(CRSR)  SPRITE X/Y"
+         ;.byte $0d
+         .byte $11,$00
          ;.byte $11,$11,$11,$11,$a3
          ;.byte $13,$00
 
@@ -515,13 +594,13 @@ spriteinit
          subroutine
          lda #spriteyv
          sta spritey
-         sta buffer
+         ;sta buffer
          lda #spritexv
          sta spritex
          lda #$00
          sta spritex+1
          jsr setpritexy
-         lda #$ff
+         lda #$0f
          sta $d015
          lda #$00
          sta $d017
@@ -544,7 +623,7 @@ spriteinit
          lda #$33
          sta $01
          ldx #$00
-.nextchr  ldy #$00
+.nextchr  ldy #$28
 .chardat  lda $d180,x
          sta (tptr),y
          iny
@@ -632,10 +711,10 @@ datatoreu
 
          lda #$00
          sta $df0a
-         lda #$90
+         lda #$b0
          sta $df01
 
-         lda #$c0
+         lda #$80
          sta $df0a
          rts
 
@@ -677,6 +756,7 @@ setup_raster_timer
                 lda #$02
                 sta $d012
                 lda #$01
+                sta $d019
                 sta $d01a
                 lda #<.tmpirq
                 sta $fffe
@@ -686,8 +766,7 @@ setup_raster_timer
                 inc $d020
                 dec $d020
                 lsr $02
-                lsr $02
-                lsr $02
+                tsx
                 nop
                 nop
                 nop
@@ -701,7 +780,8 @@ setup_raster_timer
                 nop
                 nop
                 nop
-                jmp .again
+                ;jmp .again
+                jmp *
 
 .tmpirq         ; jitter reduced to one cycle of jitter at this point
                 inc $d020
@@ -712,17 +792,18 @@ setup_raster_timer
                 bvs .ntsc1
 .ntsc1          bvs .ntsc2
 .ntsc2
-                lsr $02
-                lsr $02
-                lsr $02
-                lsr $02
-                lsr $02
+                txs                     ; 2
+                bit $02                 ; 3
+                lsr $02                 ; 5
+                lsr $02                 ; 5
+                lsr $02                 ; 5
+                lsr $02                 ; 5
 
                 lda $d012
                 cmp #$02
                 beq .delay1
 .delay1         ; fully stable here.  Now we can set up the timer
-                sta $0400
+                sta $0424
                 
                 bit npflag
                 bvc .palval
@@ -732,8 +813,10 @@ setup_raster_timer
 .ntscval        sta $dd04
                 lda #$00
                 sta $dd05
-                lda $ff00
-                lda $ff00
+                bvc .pal1
+.pal1           bvc .pal2
+.pal2           lda $ff00               ; 4
+
                 bit $02
                 lsr $02
                 lda #$01
@@ -743,6 +826,17 @@ setup_raster_timer
                 nop
                 lda #$11                ; lda #$13 to generate a pulse on PB6
                 sta $dd0e               ; start timer A right at the end of the scanline
+
+;DEBUG           = 1
+
+            IFNCONST DEBUG
+                sei
+                lda #$1b
+                sta $d011
+                lda #$00
+                sta $d01a
+                rts
+            ELSE
                 lsr $02
                 lsr $02                 ; 10
                 lsr $02
@@ -759,8 +853,10 @@ setup_raster_timer
                 bit $02
                 lda $dd04
                 sta $0401
+                ;nop
+                jmp .again
+            ENDIF
 
-                rti
 
 
 ;---------------------------------------
@@ -786,4 +882,5 @@ nmi
 
 ;---------------------------------------
 buffer
-         .byte $00
+         .byte $02,$03,$04,$05
+         .byte $06,$07,$08,$0e
