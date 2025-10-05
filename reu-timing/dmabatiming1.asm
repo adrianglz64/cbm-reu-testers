@@ -38,7 +38,7 @@ reubank  = $00
 
 dmacount = $0c
 dmaop    = $91
-dmalen   = $08
+maxdmalen       = $09
 
          org $0801
 
@@ -57,6 +57,7 @@ start
          stx storex
 
          jsr reuzpinit
+         jsr updatedmalen
 
          lda #<nmi
          sta $fffa
@@ -126,12 +127,10 @@ endless
 
 raster1
                 sta storea
-                ;lda #$3a
                 lda dmadelay
                 sbc $dd04
-                sta adjdelay+1
-
-adjdelay        bpl .dodelay
+                sta .adjdelay+1
+.adjdelay       bpl .dodelay
 
 .dodelay        cmp #$c9
                 cmp #$c9
@@ -154,130 +153,51 @@ adjdelay        bpl .dodelay
                 ldx #$0e
                 stx $d020
 
-                cmp minbranch
-                bcs .skipmin
-                sta minbranch
-                sta $0426
-.skipmin        cmp maxbranch
-                bcc .skipmax
-                sta maxbranch
-                sta $0427
-.skipmax
+                sta $0424
+;                 cmp minbranch
+;                 bcs .skipmin
+;                 sta minbranch
+;                 sta $0426
+; .skipmin        cmp maxbranch
+;                 bcc .skipmax
+;                 sta maxbranch
+;                 sta $0427
+; .skipmax
+
+                lda dmadelay
+                sbc $dd04
+                sta .adjdelay2+1
+.adjdelay2      bpl .dodelay2
+
+.dodelay2       cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c9
+                cmp #$c5
+                nop
+
+                ldx #$b1
+                stx $df01
+                sta $0425
+
                 lda #$01
                 sta $d019
-                lda storea
 
                 jsr keyscan
                 jsr updatescreen
+                jsr updatedmalen
 
+                lda storea
                 rti
 
-
-         pha
-         txa
-         pha
-         tya
-         pha
-
-         lda #$01
-         sta $d019
-
-         inc $0334
-         ldy rasterln
-         iny
-         sty $d012
-         lda #<raster2
-         sta $fffe
-         lda #>raster2
-         sta $ffff
-         tsx
-         cli
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-         nop
-
-raster2
-         txs
-
-         lda $52
-         sta $df02
-         lda $53
-         sta $df03
-
-
-         lda $54
-         sta $df04
-         lda $55
-         sta $df05
-         lda $56
-         sta $df06
-
-         bit $02
-         bit $02
-         bit npflag
-         bvs np1
-np1      bvs np2
-np2
-         cpy $d012
-         beq addcycle
-addcycle
-         inc $d020
-         lda $57
-         sta $df07
-         lda $58
-         sta $df08
-
-
-         lda #dmaop
-         sta $df01
-
-         dec $d020
-         lda #$00
-         sta $d021
-
-         lda #<raster1
-         sta $fffe
-         lda #>raster1
-         sta $ffff
-
-         lda #$01
-         sta $d019
-
-         dec rastcnt
-         bne rastnext
-
-         inc buffer
-         jsr datatoreu
-         jsr rastreset
-         jsr keyscan
-         jsr updatescreen
-         jmp irqdone
-
-rastnext
-         lda rasterln
-         clc
-         adc #$08
-         sta rasterln
-         sta $d012
-
-irqdone
-         pla
-         tay
-         pla
-         tax
-         pla
-         rti
 
 ;---------------------------------------
 keyscan
@@ -366,30 +286,30 @@ delaydone
          inc doupdate
 
 checkf3
-;          txa
-;          and #%00100000
-;          bne checkf5
-;          bit shift
-;          bmi declen
-;          lda $57
-;          cmp #$ff
-;          beq keydone
-;          inc $57
-;          bne lendone
-; declen   lda $57
-;          cmp #$01
-;          beq keydone
-;          dec $57
-; lendone  inc doupdate
+         txa
+         and #%00100000
+         bne checkf5
+         bit shift
+         bmi declen
+         lda $57
+         cmp #$09
+         beq keydone
+         inc $57
+         bne lendone
+declen   lda $57
+         cmp #$01
+         beq keydone
+         dec $57
+lendone  inc doupdate
 
 checkf5
-         txa
-         and #%01000000
-         bne keydone
-         lda startline
-         jsr incdec
-         sta startline
-         inc doupdate
+        ;  txa
+        ;  and #%01000000
+        ;  bne keydone
+        ;  lda startline
+        ;  jsr incdec
+        ;  sta startline
+        ;  inc doupdate
 
 keydone
         ;  lda doupdate
@@ -416,12 +336,12 @@ updatescreen
          sta tptr
          lda #$04
          sta tptr+1
-         ldy #$11
+         ldy #$12
          lda $52
          jsr printhex
-        ;  lda $57
-        ;  ldy #$3a
-        ;  jsr printhex
+         lda $57
+         ldy #$3a
+         jsr printhex
         ;  lda startline
         ;  ldy #$62
         ;  jsr printhex
@@ -442,6 +362,18 @@ updatescreen
 ; skiphi   inx
 ;          cpx #$10
 ;          bne nextbyte
+         rts
+
+
+;---------------------------------------
+updatedmalen
+         subroutine
+         lda $57
+         sta $df07
+         sec
+         lda #maxdmalen
+         sbc $57
+         sta $df04
          rts
 
          
@@ -493,10 +425,10 @@ reuzpinit
         ;  sta $55
         ;  lda #reubank
         ;  sta $56
-        ;  lda #<dmalen
-        ;  sta $57
-        ;  lda #>dmalen
-        ;  sta $58
+          lda #<maxdmalen
+          sta $57
+          lda #>maxdmalen
+          sta $58
          rts
 
 
@@ -569,10 +501,10 @@ done     rts
 
 msgtxt
          .byte $0d,$11
-         .byte "(F1/F2) DELAY : $"
+         .byte "(F1/F2) DELAY  : $"
          .byte $0d
-         ;.byte "(F3/F4) DMA LEN: $"
-         ;.byte $0d
+         .byte "(F3/F4) DMA LEN: $"
+         .byte $0d
          ;.byte "(F5/F6) RASTER : $"
          ;.byte $0d
          ;.byte "(CRSR)  SPRITE X/Y"
@@ -704,9 +636,9 @@ datatoreu
          lda #reubank
          sta $df06
 
-         lda #<dmalen
+         lda #<maxdmalen
          sta $df07
-         lda #>dmalen
+         lda #>maxdmalen
          sta $df08
 
          lda #$00
@@ -803,7 +735,7 @@ setup_raster_timer
                 cmp #$02
                 beq .delay1
 .delay1         ; fully stable here.  Now we can set up the timer
-                sta $0424
+                sta $0422
                 
                 bit npflag
                 bvc .palval
@@ -882,5 +814,5 @@ nmi
 
 ;---------------------------------------
 buffer
-         .byte $02,$03,$04,$05
-         .byte $06,$07,$08,$0e
+         .byte $02,$13,$24,$35
+         .byte $46,$57,$68,$79,$8e
