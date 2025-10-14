@@ -10,6 +10,7 @@ spriteyv = 37
 ;spriteyv = 106
 
 dmadelay = $52
+dmaop    = $53
 spritex  = $59
 spritey  = $5b
 startline = $60
@@ -36,8 +37,7 @@ destaddr = $d006
 reuaddr  = $00
 reubank  = $00
 
-dmacount = $0c
-dmaop    = $91
+;dmacount = $0c
 maxdmalen       = $09
 
          org $0801
@@ -225,13 +225,14 @@ noshift2 lda #%11111110
          sta prevkey
          lda #delay1v
          sta repdelay
-         bne keydone
+         beq repkey
+.kdone   jmp keydone
 
 repkey   cmp prevkey
          sta prevkey
          bne diffkey
          dec repdelay
-         bne keydone
+         bne .kdone
          ldx #delay2v
          .byte $2c
 diffkey  ldx #delay1v
@@ -303,13 +304,20 @@ declen   lda $57
 lendone  inc doupdate
 
 checkf5
-        ;  txa
-        ;  and #%01000000
-        ;  bne keydone
-        ;  lda startline
-        ;  jsr incdec
-        ;  sta startline
-        ;  inc doupdate
+         txa
+         and #%01000000
+         bne keydone
+         lda dmaop
+         bit shift
+         bmi decop
+         cmp #$03
+         beq keydone
+         inc dmaop
+         bne opdone
+decop    cmp #$00
+         beq keydone
+         dec dmaop
+opdone   inc doupdate
 
 keydone
         ;  lda doupdate
@@ -338,10 +346,20 @@ updatescreen
          sta tptr+1
          ldy #$12
          lda $52
-         jsr printhex
+         jsr pokehex
          lda $57
          ldy #$3a
-         jsr printhex
+         jsr pokehex
+         lda dmaop
+         asl
+         asl
+         asl
+         clc
+         adc #msgdmaop-msgtxt
+         tax
+         ldy #$61
+         jsr pokestr
+         
         ;  lda startline
         ;  ldy #$62
         ;  jsr printhex
@@ -377,7 +395,8 @@ updatedmalen
          rts
 
          
-printhex
+;---------------------------------------
+pokehex
          subroutine
          pha
          lsr
@@ -398,16 +417,31 @@ printhex
 
 
 ;---------------------------------------
-rastreset
-         lda startline
-         sta $d012
-         sta rasterln
+pokestr
+                subroutine
+.pokemore       lda msgtxt,x
+                beq .pokedone
+                cmp #$40
+                bcc .dontfix
+                eor #$40
+.dontfix        sta (tptr),y
+                inx
+                iny
+                bne .pokemore
+.pokedone       rts
 
-         lda #dmacount
-         sta rastcnt
 
-         ;jsr reuzpinit
-         rts
+;---------------------------------------
+; rastreset
+;          lda startline
+;          sta $d012
+;          sta rasterln
+
+;          lda #dmacount
+;          sta rastcnt
+
+;          ;jsr reuzpinit
+;          rts
 
 
 ;---------------------------------------
@@ -415,6 +449,8 @@ reuzpinit
          subroutine
          lda #cycledelayv
          sta dmadelay
+         lda #$01
+         sta dmaop
         ;  lda #<destaddr
         ;  sta $52
         ;  lda #>destaddr
@@ -505,8 +541,8 @@ msgtxt
          .byte $0d
          .byte "(F3/F4) DMA LEN: $"
          .byte $0d
-         ;.byte "(F5/F6) RASTER : $"
-         ;.byte $0d
+         .byte "(F5/F6) DMA OP : "
+         .byte $0d
          ;.byte "(CRSR)  SPRITE X/Y"
          ;.byte $0d
          .byte $11,$00
@@ -520,6 +556,15 @@ msgntsc
          .byte "NTSC"
          .byte $00
 
+msgdmaop
+                .byte "64->REU"
+                .byte $00
+                .byte "REU->64"
+                .byte $00
+                .byte "64<>REU"
+                .byte $00
+                .byte "64==REU"
+                .byte $00
 
 ;---------------------------------------
 spriteinit
@@ -542,6 +587,8 @@ spriteinit
          sta $3f00,y
          iny
          bne .sprdat
+         lda #$bc                       ; set the vic idle read byte to something we
+         sta $3fff                      ; can easily identify with the logic analyzer
          lda #$f8
          clc
 .sprptr   sta $07f8,y
