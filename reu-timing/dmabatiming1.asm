@@ -5,8 +5,10 @@
                 processor 6502
 
 startlinev = $60
-spritexv = 96
-spriteyv = 37
+;spritexv = 96
+spritexv = $c0
+spriteyv = $30
+;spriteyv = 37
 ;spriteyv = 106
 
 dmadelay = $52
@@ -303,6 +305,15 @@ declen   lda $57
          dec $57
 lendone  inc doupdate
 
+; checkf5
+;          txa
+;          and #%01000000
+;          bne keydone
+;          lda spritey
+;          jsr incdec
+;          sta spritey
+;          inc doupdate
+
 checkf5
          txa
          and #%01000000
@@ -320,9 +331,9 @@ decop    cmp #$00
 opdone   inc doupdate
 
 keydone
-        ;  lda doupdate
-        ;  beq scandone
-        ;  jsr setpritexy
+         lda doupdate
+         beq scandone
+         jsr setpritexy
 scandone
          rts
 
@@ -543,8 +554,8 @@ msgtxt
          .byte $0d
          .byte "(F5/F6) DMA OP : "
          .byte $0d
-         ;.byte "(CRSR)  SPRITE X/Y"
-         ;.byte $0d
+         .byte "(CRSR)  SPRITE X/Y"
+         .byte $0d
          .byte $11,$00
          ;.byte $11,$11,$11,$11,$a3
          ;.byte $13,$00
