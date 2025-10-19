@@ -4,42 +4,46 @@
 
                 processor 6502
 
-startlinev = $60
+; startlinev = $60
 ;spritexv = 96
 spritexv = $c0
 spriteyv = $30
 ;spriteyv = 37
 ;spriteyv = 106
 
-dmadelay = $52
-dmaop    = $53
-spritex  = $59
-spritey  = $5b
-startline = $60
-rasterln = $61
-prevkey  = $62
-shift    = $63
-doupdate = $64
-repdelay = $65
-storea   = $66
+dmadelay        = $52
+dmaop           = $53
+dmacmd          = $54
+dmalen          = $57
+
+spritex         = $59
+spritey         = $5b
+updatepos_fl    = $5c
+updatelen_fl    = $5d
+updateop_fl     = $5e
+
+; startline = $60
+; rasterln  = $61
+prevkey         = $62
+shift           = $63
+; doupdate  = $64
+repdelay        = $65
+storea          = $66
 minbranch       = $67
 maxbranch       = $68
 
-delay1v  = $18
-delay2v  = $02
+delay1v         = $18
+delay2v         = $02
 cycledelayv     = $3a
 
-tptr     = $fb
-rastcnt  = $fd
-storex   = $fe
-npflag   = $14
+tptr            = $fb
+rastcnt         = $fd
+storex          = $fe
+npflag          = $14
 
-destaddr = $d006
+reuaddr         = $00
+reubank         = $00
 
-reuaddr  = $00
-reubank  = $00
-
-;dmacount = $0c
 maxdmalen       = $09
 
          org $0801
@@ -88,14 +92,7 @@ start
          lda #>raster1
          sta $ffff
 
-
-;          lda #$1b
-;          sta $d011
-
-; rwait    bit $d011
-;          bpl rwait
-
-          jsr datatoreu
+          jsr setup_dma_op
           lda #$20
           sta $df02
           lda #$d0
@@ -130,10 +127,10 @@ endless
 raster1
                 sta storea
                 lda dmadelay
+                sec
                 sbc $dd04
                 sta .adjdelay+1
 .adjdelay       bpl .dodelay
-
 .dodelay        cmp #$c9
                 cmp #$c9
                 cmp #$c9
@@ -154,23 +151,13 @@ raster1
                 ;stx $d020
                 ldx #$0e
                 stx $d020
-
                 sta $0424
-;                 cmp minbranch
-;                 bcs .skipmin
-;                 sta minbranch
-;                 sta $0426
-; .skipmin        cmp maxbranch
-;                 bcc .skipmax
-;                 sta maxbranch
-;                 sta $0427
-; .skipmax
 
                 lda dmadelay
+                sec
                 sbc $dd04
                 sta .adjdelay2+1
 .adjdelay2      bpl .dodelay2
-
 .dodelay2       cmp #$c9
                 cmp #$c9
                 cmp #$c9
@@ -205,7 +192,7 @@ raster1
 keyscan
          lda #$00
          sta shift
-         sta doupdate
+         ;sta doupdate
          lda #%10111111
          sta $dc00
          lda $dc01
@@ -248,7 +235,7 @@ keychks  tax
          lda spritey
          jsr incdec
          sta spritey
-         inc doupdate
+         inc updatepos_fl
 
 chkcrsrt
          txa
@@ -268,7 +255,7 @@ adjxpos  lda #$01
          tya
          adc spritex+1
          sta spritex+1
-         inc doupdate
+         inc updatepos_fl
          
 checkf1  
          txa
@@ -276,17 +263,17 @@ checkf1
          bne checkf3
          bit shift
          bpl decdelay
-         lda $52
+         lda dmadelay
          cmp #$ff
          beq keydone
-         inc $52
+         inc dmadelay
          bne delaydone
-decdelay lda $52
+decdelay lda dmadelay
          cmp #$00
          beq keydone
-         dec $52
+         dec dmadelay
 delaydone
-         inc doupdate
+         ;inc doupdate
 
 checkf3
          txa
@@ -294,25 +281,16 @@ checkf3
          bne checkf5
          bit shift
          bmi declen
-         lda $57
+         lda dmalen
          cmp #$09
          beq keydone
-         inc $57
+         inc dmalen
          bne lendone
-declen   lda $57
+declen   lda dmalen
          cmp #$01
          beq keydone
-         dec $57
-lendone  inc doupdate
-
-; checkf5
-;          txa
-;          and #%01000000
-;          bne keydone
-;          lda spritey
-;          jsr incdec
-;          sta spritey
-;          inc doupdate
+         dec dmalen
+lendone  inc updatelen_fl
 
 checkf5
          txa
@@ -328,12 +306,29 @@ checkf5
 decop    cmp #$00
          beq keydone
          dec dmaop
-opdone   inc doupdate
+opdone   inc updateop_fl
 
 keydone
-         lda doupdate
-         beq scandone
-         jsr setpritexy
+                lda updatepos_fl
+                beq check_len
+                jsr set_sprite_pos
+                lda #$00
+                sta updatepos_fl
+
+check_len       lda updatelen_fl
+                beq check_op
+                jsr setup_dma_len
+                lda #$00
+                sta updatelen_fl
+
+check_op        lda updateop_fl
+                beq do_maint
+                jsr setup_dma_op
+                lda #$00
+                sta updateop_fl
+
+do_maint
+
 scandone
          rts
 
@@ -356,9 +351,9 @@ updatescreen
          lda #$04
          sta tptr+1
          ldy #$12
-         lda $52
+         lda dmadelay
          jsr pokehex
-         lda $57
+         lda dmalen
          ldy #$3a
          jsr pokehex
          lda dmaop
@@ -370,42 +365,9 @@ updatescreen
          tax
          ldy #$61
          jsr pokestr
-         
-        ;  lda startline
-        ;  ldy #$62
-        ;  jsr printhex
-;          lda #$18
-;          sta tptr
-;          lda #$05
-;          sta tptr+1
-;          ldx #$00
-; nextbyte ldy #$05
-;          lda $d000,x
-;          jsr printhex
-;          lda tptr
-;          clc
-;          adc #$28
-;          sta tptr
-;          bcc skiphi
-;          inc tptr+1
-; skiphi   inx
-;          cpx #$10
-;          bne nextbyte
          rts
 
 
-;---------------------------------------
-updatedmalen
-         subroutine
-         lda $57
-         sta $df07
-         sec
-         lda #maxdmalen
-         sbc $57
-         sta $df04
-         rts
-
-         
 ;---------------------------------------
 pokehex
          subroutine
@@ -443,43 +405,6 @@ pokestr
 
 
 ;---------------------------------------
-; rastreset
-;          lda startline
-;          sta $d012
-;          sta rasterln
-
-;          lda #dmacount
-;          sta rastcnt
-
-;          ;jsr reuzpinit
-;          rts
-
-
-;---------------------------------------
-reuzpinit
-         subroutine
-         lda #cycledelayv
-         sta dmadelay
-         lda #$01
-         sta dmaop
-        ;  lda #<destaddr
-        ;  sta $52
-        ;  lda #>destaddr
-        ;  sta $53
-        ;  lda #<reuaddr
-        ;  sta $54
-        ;  lda #>reuaddr
-        ;  sta $55
-        ;  lda #reubank
-        ;  sta $56
-          lda #<maxdmalen
-          sta $57
-          lda #>maxdmalen
-          sta $58
-         rts
-
-
-;---------------------------------------
 initcolor
          ldy #$00
          lda #$01
@@ -512,29 +437,6 @@ initscreen
 
          ldy #$00
          jsr textout
-
-;          ldy #$0f
-;          lda #$30
-;          sta tptr
-; .printaddr
-;          lda #$44
-;          jsr $ffd2
-;          lda #$30
-;          jsr $ffd2
-;          jsr $ffd2
-;          lda tptr
-;          jsr $ffd2
-;          lda #$0d
-;          jsr $ffd2
-;          inc tptr
-;          lda tptr
-;          cmp #$3a
-;          bne .skiphex
-;          lda #$41
-;          sta tptr 
-; .skiphex  dey
-;          bpl .printaddr
-
          jsr initcolor
          rts
 
@@ -577,6 +479,7 @@ msgdmaop
                 .byte "64==REU"
                 .byte $00
 
+
 ;---------------------------------------
 spriteinit
          subroutine
@@ -587,7 +490,7 @@ spriteinit
          sta spritex
          lda #$00
          sta spritex+1
-         jsr setpritexy
+         jsr set_sprite_pos
          lda #$0f
          sta $d015
          lda #$00
@@ -639,7 +542,7 @@ spriteinit
 
 
 ;---------------------------------------
-setpritexy
+set_sprite_pos
          subroutine
          lda spritey
          ldy #$00
@@ -682,30 +585,88 @@ setspritex
 
 
 ;---------------------------------------
-datatoreu
-         lda #<buffer
-         sta $df02
-         lda #>buffer
-         sta $df03
-         lda #<reuaddr
-         sta $df04
-         lda #>reuaddr
-         sta $df05
-         lda #reubank
-         sta $df06
+reuzpinit
+                subroutine
+                lda #cycledelayv
+                sta dmadelay
+                lda #$01
+                sta dmaop
+                lda #<maxdmalen
+                sta dmalen
+                rts
 
-         lda #<maxdmalen
+
+;---------------------------------------
+setup_dma_op
+                subroutine
+                lda dmaop
+                bne .check_from_reu
+                ; set up for transfer from c64 to REU
+
+.check_from_reu cmp #$01
+                bne .check_swap
+                ; set up for transfer from REU to c64
+                jsr copy_buffer_to_reu
+                lda #$80
+                sta $df0a
+                bne .setup_done
+
+
+.check_swap     cmp #$02
+                bne .check_cmp
+                ; set up for swap c64 <-> REU
+
+.check_cmp      
+                ; set up for compare c64 == REU
+
+.setup_done
+                rts
+
+
+setup_dma_len
+;---------------------------------------
+                subroutine
+                jsr updatedmalen
+                rts
+
+
+;---------------------------------------
+copy_buffer_to_reu
+                ; c64 address
+                lda #<src_buffer
+                sta $df02
+                lda #>src_buffer
+                sta $df03
+                ; reu address
+                lda #<reuaddr
+                sta $df04
+                lda #>reuaddr
+                sta $df05
+                lda #reubank
+                sta $df06
+                ; transfer length
+                lda #<maxdmalen
+                sta $df07
+                lda #$00
+                sta $df08
+                ; enable src and dst address increment
+                lda #$00
+                sta $df0a
+                ; transfer c64 to reu
+                lda #$b0
+                sta $df01
+                rts
+
+
+;---------------------------------------
+updatedmalen
+         subroutine
+         lda dmalen
          sta $df07
-         lda #>maxdmalen
-         sta $df08
-
-         lda #$00
-         sta $df0a
-         lda #$b0
-         sta $df01
-
-         lda #$80
-         sta $df0a
+         sec
+         lda #maxdmalen
+         sbc dmalen
+         sta $df04
          rts
 
 
@@ -871,6 +832,6 @@ nmi
 
 
 ;---------------------------------------
-buffer
+src_buffer
          .byte $02,$13,$24,$35
          .byte $46,$57,$68,$79,$8e
