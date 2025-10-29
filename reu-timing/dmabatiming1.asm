@@ -4,6 +4,13 @@
 
                 processor 6502
 
+; os/kernal locations used
+shflag          = $028d
+
+; kernal routines used
+kern_scnkey     = $ff9f
+kern_getin      = $ffe4
+
 ; startlinev = $60
 ;spritexv = 96
 spritexv = $c0
@@ -190,61 +197,41 @@ raster1
 
 ;---------------------------------------
 keyscan
-         lda #$00
-         sta shift
-         ;sta doupdate
-         lda #%10111111
-         sta $dc00
-         lda $dc01
-         and #%00010000
-         bne noshift1
-         dec shift
-noshift1 lda #%11111101
-         sta $dc00
-         lda $dc01
-         and #%10000000
-         bne noshift2
-         dec shift
-noshift2 lda #%11111110
-         sta $dc00
-         
-         lda $dc01
-         cmp #$ff
-         bne repkey
-         sta prevkey
-         lda #delay1v
-         sta repdelay
-         beq repkey
-.kdone   jmp keydone
-
-repkey   cmp prevkey
-         sta prevkey
-         bne diffkey
-         dec repdelay
-         bne .kdone
-         ldx #delay2v
-         .byte $2c
-diffkey  ldx #delay1v
-         stx repdelay
+         lda #$37
+         sta $01
+         dec $d020
+         jsr kern_scnkey
+         jsr kern_getin
+         pha
+         inc $d020
+         lda #$35
+         sta $01
+         pla
+         bne keychks
+         jmp keydone
 
 keychks  tax
-
-         ; cursor down
-         and #%10000000
-         bne chkcrsrt
+         cmp #$91   ; cursor up
+         beq crsr_updown
+         cmp #$11   ; cursor down
+         bne chk_crsr_rt
+         clc
+crsr_updown
          lda spritey
          jsr incdec
          sta spritey
          inc updatepos_fl
+         jmp keydone
 
-chkcrsrt
-         txa
-         ; cursor right
-         and #%00000100
+chk_crsr_rt
+         cmp #$9d   ; cursor left
+         beq crsr_rtlft
+         cmp #$1d   ; cursor right
          bne checkf1
+         clc
+crsr_rtlft
          ldy #$00
-         bit shift
-         bpl adjxpos
+         bcc adjxpos
          dey
          tya
          .byte $2c
@@ -256,57 +243,60 @@ adjxpos  lda #$01
          adc spritex+1
          sta spritex+1
          inc updatepos_fl
+         jmp keydone
          
-checkf1  
-         txa
-         and #%00010000
+checkf1
+         cmp #$85   ; f1
+         beq decdelay
+         cmp #$89   ; f2
          bne checkf3
-         bit shift
-         bpl decdelay
          lda dmadelay
          cmp #$ff
-         beq keydone
+         beq delaydone
          inc dmadelay
          bne delaydone
 decdelay lda dmadelay
          cmp #$00
-         beq keydone
+         beq delaydone
          dec dmadelay
 delaydone
-         ;inc doupdate
+         jmp keydone
 
 checkf3
-         txa
-         and #%00100000
+         cmp #$86   ; f3
+         beq declen
+         cmp #$8a   ; f4
          bne checkf5
-         bit shift
-         bmi declen
          lda dmalen
          cmp #$09
-         beq keydone
+         beq lendone
          inc dmalen
-         bne lendone
+         bne lenupd
 declen   lda dmalen
          cmp #$01
-         beq keydone
+         beq lendone
          dec dmalen
-lendone  inc updatelen_fl
+lenupd   inc updatelen_fl
+lendone  jmp keydone
+
 
 checkf5
-         txa
-         and #%01000000
+         cmp #$87   ; f5
+         beq decop
+         cmp #$8b   ; f7
          bne keydone
+
          lda dmaop
-         bit shift
-         bmi decop
          cmp #$03
-         beq keydone
+         beq opdone
          inc dmaop
-         bne opdone
-decop    cmp #$00
-         beq keydone
+         bne opupd
+decop    lda dmaop
+         cmp #$00
+         beq opdone
          dec dmaop
-opdone   inc updateop_fl
+opupd    inc updateop_fl
+opdone   jmp keydone
 
 keydone
                 lda updatepos_fl
@@ -333,14 +323,14 @@ scandone
          rts
 
 
-incdec
-         clc
-         bit shift
-         bmi incr
-         adc #$01
-         .byte $2c
-incr     adc #$ff
-         rts
+;---------------------------------------
+incdec          
+                subroutine
+                bcs .decrement
+                adc #$01
+                .byte $2c
+.decrement      sbc #$01
+                rts
          
 
 ;---------------------------------------
