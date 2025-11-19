@@ -100,10 +100,7 @@ start
          sta $ffff
 
           jsr setup_dma_op
-          lda #$20
-          sta $df02
-          lda #$d0
-          sta $df03
+          jsr setup_dma_dst_vicborder
 ;          lda #startlinev
 ;          sta startline
 ;          jsr rastreset
@@ -591,16 +588,15 @@ setup_dma_op
                 subroutine
                 lda dmaop
                 bne .check_from_reu
+                jsr setup_dma_src_temp_buf
                 ; set up for transfer from c64 to REU
 
 .check_from_reu cmp #$01
                 bne .check_swap
                 ; set up for transfer from REU to c64
                 jsr copy_buffer_to_reu
-                lda #$80
-                sta $df0a
-                bne .setup_done
-
+                jsr setup_dma_dst_vicborder
+                jmp .setup_done
 
 .check_swap     cmp #$02
                 bne .check_cmp
@@ -619,6 +615,35 @@ setup_dma_len
                 jsr updatedmalen
                 rts
 
+
+setup_dma_dst_vicborder
+;---------------------------------------
+                subroutine
+                lda #$20
+                sta $df02
+                lda #$d0
+                sta $df03
+                lda #$80
+                sta $df0a
+                rts
+
+
+setup_dma_src_temp_buf
+;---------------------------------------
+                subroutine
+                lda #<tmp_buffer
+                sta $df02
+                lda #>tmp_buffer
+                sta $df03
+                lda #$00
+                sta $df0a
+                rts
+
+
+copy_buffer_to_tmp
+;---------------------------------------
+                subroutine
+                rts
 
 ;---------------------------------------
 copy_buffer_to_reu
@@ -823,5 +848,11 @@ nmi
 
 ;---------------------------------------
 src_buffer
-         .byte $02,$13,$24,$35
-         .byte $46,$57,$68,$79,$8e
+                .byte $02,$13,$24,$35
+                .byte $46,$57,$68,$79
+                .byte $8e
+
+tmp_buffer
+                .byte $00,$00,$00,$00
+                .byte $00,$00,$00,$00
+                .byte $00
