@@ -70,7 +70,7 @@ start
          stx storex
 
          jsr reuzpinit
-         jsr updatedmalen
+         ;jsr updatedmalen
 
          lda #<nmi
          sta $fffa
@@ -100,7 +100,7 @@ start
          sta $ffff
 
           jsr setup_dma_op
-          jsr setup_dma_dst_vicborder
+          ;jsr setup_dma_dst_vicborder
 ;          lda #startlinev
 ;          sta startline
 ;          jsr rastreset
@@ -150,7 +150,8 @@ raster1
                 cmp #$c5
                 nop
 
-                ldx #$b1
+                ;ldx #$b1
+                ldx dmacmd
                 stx $df01
                 ;stx $d020
                 ldx #$0e
@@ -177,7 +178,8 @@ raster1
                 cmp #$c5
                 nop
 
-                ldx #$b1
+                ;ldx #$b1
+                ldx dmacmd
                 stx $df01
                 sta $0425
 
@@ -186,7 +188,7 @@ raster1
 
                 jsr keyscan
                 jsr updatescreen
-                jsr updatedmalen
+                ;jsr updatedmalen
 
                 lda storea
                 rti
@@ -443,6 +445,8 @@ msgtxt
          .byte $0d
          .byte "(F5/F6) DMA OP : "
          .byte $0d
+         .byte "(F7/F8) MISMATCH BYTE: $"
+         .byte $0d
          .byte "(CRSR)  SPRITE X/Y"
          .byte $0d
          .byte $11,$00
@@ -594,25 +598,51 @@ setup_dma_op
 .check_from_reu cmp #$01
                 bne .check_swap
                 ; set up for transfer from REU to c64
-                jsr copy_buffer_to_reu
-                jsr setup_dma_dst_vicborder
+                jsr setup_dma_from_reu
                 jmp .setup_done
 
 .check_swap     cmp #$02
                 bne .check_cmp
+                jsr setup_dma_src_temp_buf
                 ; set up for swap c64 <-> REU
 
 .check_cmp      
                 ; set up for compare c64 == REU
+                jsr setup_dma_src_temp_buf
 
-.setup_done
+.setup_done     lda dmaop
+                ora #$b0
+                sta dmacmd
+                rts
+
+
+
+setup_dma_from_reu
+                subroutine
+                jsr copy_buffer_to_tmp
+                ldx dmalen
+                dex
+                txa
+                asl
+                asl
+                asl
+                asl
+                ora #$0e
+                sta tmp_buffer,x
+                jsr copy_tmp_buffer_to_reu
+                jsr setup_dma_dst_vicborder
+                jsr update_dmalen
                 rts
 
 
 setup_dma_len
 ;---------------------------------------
                 subroutine
-                jsr updatedmalen
+                lda dmaop
+                cmp #$01
+                bne .skip_bytefix
+                jsr setup_dma_from_reu
+.skip_bytefix   jsr update_dmalen
                 rts
 
 
@@ -643,14 +673,21 @@ setup_dma_src_temp_buf
 copy_buffer_to_tmp
 ;---------------------------------------
                 subroutine
+                ldx #maxdmalen
+                dex
+.copytmp        lda src_buffer,x
+                sta tmp_buffer,x
+                dex
+                bpl .copytmp
                 rts
 
+
 ;---------------------------------------
-copy_buffer_to_reu
+copy_tmp_buffer_to_reu
                 ; c64 address
-                lda #<src_buffer
+                lda #<tmp_buffer
                 sta $df02
-                lda #>src_buffer
+                lda #>tmp_buffer
                 sta $df03
                 ; reu address
                 lda #<reuaddr
@@ -674,14 +711,14 @@ copy_buffer_to_reu
 
 
 ;---------------------------------------
-updatedmalen
+update_dmalen
          subroutine
          lda dmalen
          sta $df07
-         sec
-         lda #maxdmalen
-         sbc dmalen
-         sta $df04
+         ;sec
+         ;lda #maxdmalen
+         ;sbc dmalen
+         ;sta $df04
          rts
 
 
