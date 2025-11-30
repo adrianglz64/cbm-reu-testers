@@ -2,7 +2,7 @@
 
 zp_ptr          = $fb
 dst_ptr         = $fd
-zp_dma_count    = $02
+zp_tmp          = $02
 
                 org $0801
                 
@@ -11,7 +11,10 @@ zp_dma_count    = $02
                 .byte $31,$00,$00,$00
 
 start
-                ; fill 4000-7fff with 55aa
+                lda #$0e
+                sta $d020
+                lda #$06
+                sta $d021
                 lda #<msgtxt
                 sta zp_ptr
                 lda #>msgtxt
@@ -19,11 +22,13 @@ start
                 ldy #$00
                 jsr textout
 
+                ; set pointer for pokehex
                 lda #$a0
                 sta dst_ptr
                 lda #$04
                 sta dst_ptr+1
 
+                ; fill 4000-7fff with 55aa
                 sei
                 lda #$00
                 sta zp_ptr
@@ -46,7 +51,7 @@ mem_init_next   inc zp_ptr+1
                 ;-----------------------------------------------
 mem_init_done   
                 lda #$10
-                sta zp_dma_count
+                sta zp_tmp
 
                 jsr init_reu_addr_tbl
                 jsr set_reu_addr
@@ -62,7 +67,7 @@ do_next_xfer    ldx #$00
                 lda #$90
                 sta $df01
 
-                dec zp_dma_count
+                dec zp_tmp
                 bne do_next_xfer
 
                 lda #$00
@@ -70,7 +75,7 @@ do_next_xfer    ldx #$00
                 sta pass_num+1
 
 restart_test
-                jsr show_pass_num
+                jsr print_pass_num
 
                 lda #$ff
                 jsr clear_mem
@@ -87,7 +92,7 @@ do_next_block
                 ldx #$00
                 ldy #$20
                 jsr set_xfer_len
-                jsr show_reu_addr
+                jsr print_reu_addr
                 ; copy from reu to $1000 (8k of 55aa)
                 lda #$91
                 sta $df01
@@ -119,10 +124,21 @@ skip_pass_hi    jmp restart_test
 do_error
                 lda #$02
                 sta $d020
+                ; print fail addr
                 ldy #$5c
                 lda zp_ptr+1
                 jsr pokehex
                 lda zp_ptr
+                jsr pokehex
+                ; print =
+                lda #$3d
+                sta (dst_ptr),y
+                iny
+                sty zp_tmp
+                ; print fail byte
+                ldy #$00
+                lda (zp_ptr),y
+                ldy zp_tmp
                 jsr pokehex
                 cli
                 rts
@@ -233,8 +249,8 @@ done     rts
 
 ;----------------------------------------------------------
 msgtxt
-         .byte $93
-         .byte "REU EXPANSION RAM TEST"
+         .byte $93, $9a
+         .byte "CBM EXPANSION RAM TEST"
          .byte $0d, $0d
          .byte "TEST #3"
          .byte $0d, $0d
@@ -247,7 +263,7 @@ msgtxt
          .byte $00
 
 
-show_reu_addr
+print_reu_addr
 ;---------------------------------------
                 subroutine
                 ldy #$34
@@ -261,7 +277,7 @@ show_reu_addr
                 rts
 
 
-show_pass_num
+print_pass_num
 ;---------------------------------------
                 subroutine
                 ldy #$0c
