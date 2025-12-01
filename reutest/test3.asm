@@ -1,12 +1,21 @@
                 processor 6502
 
+; zero page locations
 zp_ptr          = $fb
 dst_ptr         = $fd
 zp_tmp          = $02
 
+; constants
+dma_step        = $10
+
+; kernal routines
+kern_getin      = $ffe4
+
+
                 org $0801
-                
-                .byte $0b,$08,$e6,$07
+
+                ; basic stub
+                .byte $0b,$08,$e9,$07
                 .byte $9e,$32,$30,$36
                 .byte $31,$00,$00,$00
 
@@ -15,10 +24,7 @@ start
                 sta $d020
                 lda #$06
                 sta $d021
-                lda #<msgtxt
-                sta zp_ptr
-                lda #>msgtxt
-                sta zp_ptr+1
+                jsr init_textout
                 ldy #$00
                 jsr textout
 
@@ -82,34 +88,52 @@ restart_test
 
                 lda #$10
                 sta block_count
-                jsr init_reu_addr_tbl
                 jsr set_reu_addr
+                lda #$00
+                sta $df08
 
 do_next_block
-                ldx #$00
-                ldy #$10
-                jsr set_c64_addr
-                ldx #$00
-                ldy #$20
-                jsr set_xfer_len
                 jsr print_reu_addr
-                ; copy from reu to $1000 (8k of 55aa)
+                lda #$ff
+                jsr clear_dst
+                lda #$00
+                sta zp_ptr
+                sta $df02
+                lda #$10
+                sta zp_ptr+1
+.next_half      sta $df03
+                ldy #$00
+
+                ; copy from reu to c64 (16 bytes of 55aa)
+.next_xfer      ldx #dma_step
+                stx $df07
                 lda #$91
                 sta $df01
+.next_word      lda (zp_ptr),y
+                cmp #$55
+                bne do_error
+                iny
+                dex
+                lda (zp_ptr),y
+                cmp #$aa
+                bne do_error
+                iny
+                dex
+                bne .next_word
+                cpy #$00
+                bne .next_xfer
+                inc zp_ptr+1
+                lda zp_ptr+1
+                cmp #$80
+                beq .block_done
+                cmp #$30
+                bne .next_xfer
+                ;beq do_error
+                lda #$60
+                sta zp_ptr+1
+                bne .next_half
 
-                ldx #$00
-                ldy #$60
-                jsr set_c64_addr
-                ldx #$00
-                ldy #$20
-                jsr set_xfer_len
-                ; copy from reu to $6000 (8k of 55aa)
-                lda #$91
-                sta $df01
-
-                jsr check_mem
-                bcs do_error
-
+.block_done
                 dec block_count
                 bne do_next_block
                 
@@ -122,6 +146,8 @@ skip_pass_hi    jmp restart_test
                 rts
 
 do_error
+                sty zp_ptr
+                lda $de00               ; pulse IO1 to trigger analyzer
                 lda #$02
                 sta $d020
                 ; print fail addr
@@ -141,7 +167,15 @@ do_error
                 ldy zp_tmp
                 jsr pokehex
                 cli
-                rts
+                jsr init_textout
+                ldy #prompttxt-msgtxt
+                jsr textout
+wait_key        jsr kern_getin
+                beq wait_key
+                cmp #$20
+                bne exit
+                jmp start
+exit            rts
                 
 
 ;----------------------------------------------------------
@@ -191,38 +225,26 @@ clear_mem
 
 
 ;----------------------------------------------------------
-check_mem
+clear_dst
                 subroutine
-                lda #$00
-                sta zp_ptr
-                lda #$10
-                sta zp_ptr+1
+                ldx #$00
+                stx zp_ptr
+                ldx #$10
+                stx zp_ptr+1
                 ldy #$00
-.nextblock      ldx #$20
-.nextword       lda (zp_ptr),y
-                cmp #$55
-                bne .mismatch
+.clear          sta (zp_ptr),y
                 iny
-                lda (zp_ptr),y
-                cmp #$aa
-                bne .mismatch
-                iny
-                bne .nextword
+                bne .clear
                 inc zp_ptr+1
-                dex
-                bne .nextword
-                lda zp_ptr+1
-                cmp #$80
+                ldx zp_ptr+1
+                cpx #$80
                 beq .done
-                lda #$60
-                sta zp_ptr+1
-                bne .nextblock
-.done           clc
-                rts
-.mismatch
-                sty zp_ptr
-                sec
-                rts
+                cpx #$30
+                bne .clear
+                ldx #$60
+                stx zp_ptr+1
+                bne .clear
+.done           rts
 
 
 ;----------------------------------------------------------
@@ -238,6 +260,16 @@ init_reu_addr_tbl
 
 
 ;----------------------------------------------------------
+init_textout
+                subroutine
+                lda #<msgtxt
+                sta zp_ptr
+                lda #>msgtxt
+                sta zp_ptr+1
+                rts
+
+
+;----------------------------------------------------------
 textout
          lda (zp_ptr),y
          beq done
@@ -249,18 +281,25 @@ done     rts
 
 ;----------------------------------------------------------
 msgtxt
-         .byte $93, $9a
-         .byte "CBM EXPANSION RAM TEST"
-         .byte $0d, $0d
-         .byte "TEST #3"
-         .byte $0d, $0d
-         .byte "PASS      :"
-         .byte $0d
-         .byte "REU  ADDR :"
-         .byte $0d
-         .byte "FAIL ADDR :"
-         .byte $0d
-         .byte $00
+                .byte $93, $9a
+                .byte "CBM EXPANSION RAM TEST"
+                .byte $0d, $0d
+                .byte "TEST #3"
+                .byte $0d, $0d
+                .byte "PASS      :"
+                .byte $0d
+                .byte "REU  ADDR :"
+                .byte $0d
+                .byte "FAIL ADDR :"
+                .byte $0d
+                .byte $00
+
+prompttxt
+                .byte $0d
+                .byte "PRESS SPACE TO RESTART TEST"
+                .byte $0d
+                .byte "ANY OTHER KEY TO EXIT"
+                .byte $00
 
 
 print_reu_addr
