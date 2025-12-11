@@ -10,7 +10,7 @@ dma_step        = $10
 
 ; kernal routines
 kern_getin      = $ffe4
-
+kern_plot       = $fff0
 
                 org $0801
 
@@ -24,6 +24,8 @@ start
                 sta $d020
                 lda #$06
                 sta $d021
+                jsr init_altscreen
+                jsr set_text_mode
                 jsr init_textout
                 ldy #$00
                 jsr textout
@@ -76,6 +78,9 @@ do_next_xfer    ldx #$00
                 dec zp_tmp
                 bne do_next_xfer
 
+                lda fill_byte
+                jsr clear_mem
+
                 lda #$00
                 sta pass_num
                 sta pass_num+1
@@ -83,23 +88,21 @@ do_next_xfer    ldx #$00
 restart_test
                 jsr print_pass_num
 
-                lda #$ff
-                jsr clear_mem
-
-                lda #$10
+                lda #$20
                 sta block_count
+                jsr init_reu_addr_tbl
                 jsr set_reu_addr
                 lda #$00
                 sta $df08
 
 do_next_block
                 jsr print_reu_addr
-                lda #$ff
-                jsr clear_dst
+                lda fill_byte
+                ;jsr clear_dst
                 lda #$00
                 sta zp_ptr
                 sta $df02
-                lda #$10
+                lda #$20
                 sta zp_ptr+1
 .next_half      sta $df03
                 ldy #$00
@@ -109,6 +112,7 @@ do_next_block
                 stx $df07
                 lda #$91
                 sta $df01
+                sty zp_tmp
 .next_word      lda (zp_ptr),y
                 cmp #$55
                 bne do_error
@@ -120,27 +124,31 @@ do_next_block
                 iny
                 dex
                 bne .next_word
+                jsr clear_block
                 cpy #$00
                 bne .next_xfer
                 inc zp_ptr+1
                 lda zp_ptr+1
-                cmp #$80
-                beq .block_done
-                cmp #$30
+                cmp #$40
                 bne .next_xfer
-                ;beq do_error
-                lda #$60
-                sta zp_ptr+1
-                bne .next_half
 
 .block_done
-                dec block_count
+                lda $dc01
+                lsr
+                bcs .check_2
+                jsr set_text_mode
+                jmp .check_block
+.check_2        and #$04
+                bne .check_block
+                jsr set_bitmap_mode
+
+.check_block     dec block_count
                 bne do_next_block
                 
                 inc pass_num
-                bne skip_pass_hi
+                bne .skip_pass_hi
                 inc pass_num+1
-skip_pass_hi    jmp restart_test
+.skip_pass_hi    jmp restart_test
 
                 cli
                 rts
@@ -150,6 +158,7 @@ do_error
                 lda $de00               ; pulse IO1 to trigger analyzer
                 lda #$02
                 sta $d020
+                jsr save_fail_page
                 ; print fail addr
                 ldy #$5c
                 lda zp_ptr+1
@@ -170,13 +179,67 @@ do_error
                 jsr init_textout
                 ldy #prompttxt-msgtxt
                 jsr textout
+do_refresh      jsr display_page
 wait_key        jsr kern_getin
                 beq wait_key
+                cmp #$03
+                beq exit
+                cmp #$5f
+                beq exit
                 cmp #$20
-                bne exit
-                jmp start
-exit            rts
+                beq restart
+                cmp #$85
+                beq do_page_up
+                cmp #$86
+                beq do_page_down
+                cmp #$88
+                beq do_refresh
+                cmp #$31
+                bne check_2
+                jsr set_text_mode
+                jmp wait_key
+check_2         cmp #$32
+                bne wait_key
+                jsr set_bitmap_mode
+end_keys        jmp wait_key
+restart         jmp start
+
+exit            
+                ldx #$14
+                ldy #$00
+                clc
+                jsr kern_plot
+                rts
                 
+do_page_up
+                dec reu_dst_addr+1
+                lda reu_dst_addr+1
+                cmp #$ff
+                bne skip_dec_hi
+                dec reu_dst_addr+2
+skip_dec_hi     jmp do_refresh
+
+do_page_down
+                inc reu_dst_addr+1
+                bne skip_inc_hi
+                inc reu_dst_addr+2
+skip_inc_hi     jmp do_refresh
+
+
+
+;----------------------------------------------------------
+set_text_mode   lda #$1b
+                sta $d011
+                lda #$14
+                sta $d018
+                rts
+
+set_bitmap_mode lda #$3b
+                sta $d011
+                lda #$38
+                sta $d018
+                rts
+
 
 ;----------------------------------------------------------
 set_c64_addr
@@ -195,6 +258,24 @@ set_reu_addr
                 sta $df04,x
                 dex
                 bpl .set_addr
+                rts
+
+
+;----------------------------------------------------------
+save_fail_page
+                subroutine
+                lda $df04
+                sec
+                sbc #$10
+                and #$00
+                sta reu_dst_addr
+                lda $df05
+                sbc #$00
+                sta reu_dst_addr+1
+                lda $df06
+                sbc #$00
+                and #$03
+                sta reu_dst_addr+2
                 rts
 
 
@@ -224,27 +305,40 @@ clear_mem
                 rts
 
 
+; ;----------------------------------------------------------
+; clear_dst
+;                 subroutine
+;                 ldx #$00
+;                 stx zp_ptr
+;                 ldx #$10
+;                 stx zp_ptr+1
+;                 ldy #$00
+; .clear          sta (zp_ptr),y
+;                 iny
+;                 bne .clear
+;                 inc zp_ptr+1
+;                 ldx zp_ptr+1
+;                 cpx #$80
+;                 beq .done
+;                 cpx #$30
+;                 bne .clear
+;                 ldx #$60
+;                 stx zp_ptr+1
+;                 bne .clear
+; .done           rts
+
+
 ;----------------------------------------------------------
-clear_dst
+clear_block
                 subroutine
-                ldx #$00
-                stx zp_ptr
+                lda fill_byte
                 ldx #$10
-                stx zp_ptr+1
-                ldy #$00
+                ldy zp_tmp
 .clear          sta (zp_ptr),y
                 iny
+                dex
                 bne .clear
-                inc zp_ptr+1
-                ldx zp_ptr+1
-                cpx #$80
-                beq .done
-                cpx #$30
-                bne .clear
-                ldx #$60
-                stx zp_ptr+1
-                bne .clear
-.done           rts
+                rts
 
 
 ;----------------------------------------------------------
@@ -256,6 +350,20 @@ init_reu_addr_tbl
 .init_tbl       sta reu_dst_addr,x
                 dex
                 bpl .init_tbl
+                rts
+
+
+;----------------------------------------------------------
+init_altscreen
+                subroutine
+                ldy #$00
+                lda #$20
+.clrscr         sta $0c00,y
+                sta $0d00,y
+                sta $0e00,y
+                sta $0f00,y
+                iny
+                bne .clrscr
                 rts
 
 
@@ -298,7 +406,9 @@ prompttxt
                 .byte $0d
                 .byte "PRESS SPACE TO RESTART TEST"
                 .byte $0d
-                .byte "ANY OTHER KEY TO EXIT"
+                .byte "F1/F3 TO DISPLAY PREV/NEXT PAGE"
+                .byte $0d
+                .byte "F7 TO REFRESH.  STOP TO EXIT."
                 .byte $00
 
 
@@ -348,9 +458,31 @@ pokehex
                 rts
 
 
+;---------------------------------------
+display_page
+                subroutine
+                dec $d020
+                lda #$e0
+                sta $df02
+                lda #$05
+                sta $df03
+                jsr set_reu_addr
+                jsr print_reu_addr
+                ldx #$00
+                stx $df07
+                inx
+                stx $df08
+                ; copy one page from REU to screen
+                lda #$91
+                sta $df01
+                inc $d020
+                rts
+
+
 ;----------------------------------------------------------
 reu_dst_addr
                 .byte $00,$00,$00
 
 block_count     .byte $00
 pass_num        .byte $00,$00
+fill_byte       .byte $ff
