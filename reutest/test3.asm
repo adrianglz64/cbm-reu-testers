@@ -79,6 +79,7 @@ do_next_xfer    ldx #$00
                 bne do_next_xfer
 
                 lda fill_byte
+                sta zp_tmp
                 jsr clear_mem
 
                 lda #$00
@@ -92,47 +93,51 @@ restart_test
                 sta block_count
                 jsr init_reu_addr_tbl
                 jsr set_reu_addr
+                lda #$01
+                sta $df07
                 lda #$00
                 sta $df08
 
 do_next_block
                 jsr print_reu_addr
-                lda fill_byte
-                ;jsr clear_dst
                 lda #$00
                 sta zp_ptr
                 sta $df02
                 lda #$20
                 sta zp_ptr+1
-.next_half      sta $df03
+                sta $df03
                 ldy #$00
+                ldx fill_byte
 
-                ; copy from reu to c64 (16 bytes of 55aa)
-.next_xfer      ldx #dma_step
-                stx $df07
-                lda #$91
+                ; transfer one byte at a time from reu to c64 and verify
+.next_page
+.next_word      lda #$91
                 sta $df01
-                sty zp_tmp
-.next_word      lda (zp_ptr),y
+                lda (zp_ptr),y
                 cmp #$55
                 bne do_error
+                txa
+                sta (zp_ptr),y
                 iny
-                dex
+
+                lda #$91
+                sta $df01
                 lda (zp_ptr),y
                 cmp #$aa
                 bne do_error
+                txa
+                sta (zp_ptr),y
                 iny
-                dex
+
                 bne .next_word
-                jsr clear_block
-                cpy #$00
-                bne .next_xfer
+                ;jsr clear_block
+                ;cpy #$00
+                ;bne .next_xfer
                 inc zp_ptr+1
                 lda zp_ptr+1
                 cmp #$40
-                bne .next_xfer
+                bne .next_page
 
-.block_done
                 lda $dc01
                 lsr
                 bcs .check_2
@@ -142,7 +147,7 @@ do_next_block
                 bne .check_block
                 jsr set_bitmap_mode
 
-.check_block     dec block_count
+.check_block    dec block_count
                 bne do_next_block
                 
                 inc pass_num
@@ -176,9 +181,17 @@ do_error
                 ldy zp_tmp
                 jsr pokehex
                 cli
+                lda zp_ptr
+                pha
+                lda zp_ptr+1
+                pha
                 jsr init_textout
                 ldy #prompttxt-msgtxt
                 jsr textout
+                pla
+                sta zp_ptr+1
+                pla
+                sta zp_ptr
 do_refresh      jsr display_page
 wait_key        jsr kern_getin
                 beq wait_key
@@ -199,9 +212,16 @@ wait_key        jsr kern_getin
                 jsr set_text_mode
                 jmp wait_key
 check_2         cmp #$32
-                bne wait_key
+                bne check_3
                 jsr set_bitmap_mode
-end_keys        jmp wait_key
+                jmp wait_key
+check_3         cmp #$33
+                bne wait_key
+                ldy #$00
+                lda (zp_ptr),y
+                eor #$ff
+                sta (zp_ptr),y
+                jmp wait_key
 restart         jmp start
 
 exit            
@@ -329,16 +349,16 @@ clear_mem
 
 
 ;----------------------------------------------------------
-clear_block
-                subroutine
-                lda fill_byte
-                ldx #$10
-                ldy zp_tmp
-.clear          sta (zp_ptr),y
-                iny
-                dex
-                bne .clear
-                rts
+; clear_block
+;                 subroutine
+;                 lda fill_byte
+;                 ldx #$10
+;                 ldy zp_tmp
+; .clear          sta (zp_ptr),y
+;                 iny
+;                 dex
+;                 bne .clear
+;                 rts
 
 
 ;----------------------------------------------------------
