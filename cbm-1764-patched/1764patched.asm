@@ -41,7 +41,7 @@ zp_fill_byte_index  = $78
 
 start               sei
                     lda #$06
-                    sta d021_vBackgCol0
+                    jsr setbgcol_and_mmu
                     jsr init_color_mem
                     jsr init_screen_mem
                     ldx #$00
@@ -196,9 +196,11 @@ L8135               inc zp_test1_failed
 L813d               jsr display_test_pass
 L8140               ldy zp_reu_bank_tmp
                     ldx zp_data_table_offs
+                    ; number of banks - 1.  Set by basic loader
                     cpy #$03
                     beq test1_bank_done
                     inc zp_reu_bank
+                    ; (number of banks * 4) + 1.   Set by basic loader
                     lda #$11
                     sta zp_xfer_count
                     inc zp_screen_line_num
@@ -1535,14 +1537,96 @@ increment_int_yx    clc
                     sta zp_temp_int + 1
                     rts
 
-wait_key_restart    lda $dc01
+wait_key_restart    lda #$0e            ; set mmu to map in kernal rom in 128 mode in case we exit
+                    sta $ff00           ; added in V051287
+                    lda $dc01
                     bpl L8f0c
                     cmp #$ff
                     beq wait_key_restart
                     jmp start
                     
 L8f0c               jmp ($fffc)
+
+
+; Code added in newer V051287 version included with the CLD Super C=lone REU to support C128 mode and 512KB
+; =================================================================================================================
+
+                    org $8b00,$00
+
+reu_size_check      ; size detect routine called from basic loader
+                    sei
+                    lda $ff00
+                    pha
+                    lda #$0e
+                    sta $ff00
+                    jsr reu_size_detect
+                    sta $8ef0
+                    stx $8ef1
+                    pla
+                    sta $ff00
+                    cli
+                    rts
+
+setbgcol_and_mmu    pha
+                    lda #$3e            ; set mmu to map all rom out, keep i/o in 128 mode
+                    sta $ff00           ;
+                    pla
+                    sta d021_vBackgCol0
+                    rts
+
+reu_size_detect     ldx #$00
+                    stx $fa
+                    stx $fb
+L8f36               txa
+                    eor #$5a
+                    sta $1300,x
+                    dex
+                    bne L8f36
+L8f3f               jsr c64_to_reu
+                    inc $fb
+                    bne L8f3f
+L8f46               ldx #$00
+L8f48               txa
+                    eor #$3c
+                    sta $1300,x
+                    dex
+                    bne L8f48
+                    jsr c64_to_reu
+                    inc $fb
+                    bmi L8f6a
+                    jsr reu_to_c64
+                    ldx #$00
+L8f5d               txa
+                    eor #$5a
+                    cmp $1300,x
+                    bne L8f6a
+                    dex
+                    bne L8f5d
+                    beq L8f46
+L8f6a               lda $fa
+                    ldx $fb
+                    rts
                     
+reu_to_c64          ldy #$b1
+                    dc.b $2c
+c64_to_reu          ldy #$b0
+                    ldx #$0d
+L8f77               lda reu_reg_data,x
+                    sta $df02,x
+                    dex
+                    bpl L8f77
+                    lda $fa
+                    ldx $fb
+                    sta $df05
+                    stx $df06
+                    sty $df01
+                    rts
+
+                    org $8b90,$00
+                    
+reu_reg_data        dc.b $00,$13,$00,$00,$00,$00,$01,$00
+                    dc.b $00,$00,$00,$00,$00,$00,$00,$00 
+
 dma_data_table      dc.b $00,$55,$aa,$ff
 txt_digit_chars     dc.b $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$01
 test_screen_addr    dc.w $04a2,$04ca,$04f2,$051a,$0542,$056a,$0592,$05ba,$065a,$0682,$06aa,$06d2,$06fa,$0722
